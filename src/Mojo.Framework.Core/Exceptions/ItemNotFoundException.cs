@@ -2,10 +2,10 @@
 
 public class ItemNotFoundException : Exception
 {
-    public object Key { get; private set; }
+    public ItemSelector Selector { get; private set; }
 
-    public ItemNotFoundException(object key) => this.Key = key;
+    public ItemNotFoundException(ItemSelector selector) => this.Selector = selector;
 
-    public ItemNotFoundException(object key, Exception innerException)
-        : base(innerException.Message, innerException) => this.Key = key;
+    public ItemNotFoundException(ItemSelector selector, Exception innerException)
+        : base(innerException.Message, innerException) => this.Selector = selector;
 }

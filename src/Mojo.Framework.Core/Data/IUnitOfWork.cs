@@ -8,7 +8,24 @@
 /// </remarks>
 public interface IUnitOfWork : IAsyncDisposable
 {
+    /// <inheritdoc cref="IServiceProvider" path="/summary"/>
+    IServiceProvider Services { get; }
+
+    /// <summary>
+    ///     An asynchronously method that complete all changes.
+    /// </summary>
+    /// <param name="cancellationToken"><inheritdoc cref="CancellationToken" path="/summary"/></param>
+    /// <returns>
+    ///     A task that represents the asynchronous operation.
+    /// </returns>
     Task CompleteAsync(CancellationToken cancellationToken);
 
+    /// <summary>
+    ///     An asynchronously method that discard all changes.
+    /// </summary>
+    /// <param name="cancellationToken"><inheritdoc cref="CancellationToken" path="/summary"/></param>
+    /// <returns>
+    ///     A task that represents the asynchronous operation.
+    /// </returns>
     Task DiscardAsync(CancellationToken cancellationToken);
 }
