@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Mojo.Framework.Core.Data.Entities;
 using Mojo.Framework.Core.Exceptions;
 using Mojo.Framework.Core.Mapping;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 
@@ -15,20 +14,19 @@ namespace Mojo.Framework.Core.Data.EntityFrameworkCore;
 /// <typeparam name="TDomainModel">Type of domain entity.</typeparam>
 /// <typeparam name="TDataKey">Type of database entity.</typeparam>
 /// <typeparam name="TDataModel">Type of database entity.</typeparam>
-public abstract class BaseRepository<TDomainModel, TDataKey, TDataModel>
+public abstract class EntityRepositoryBase<TDomainModel, TDataKey, TDataModel>
     where TDomainModel : class
-    where TDataKey : class
     where TDataModel : EntityBase<TDataKey>
 {
     private readonly DbContext _dbContext;
     private readonly IMapper _mapper;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="BaseRepository{TDomainModel, TDataModel}" /> class.
+    /// Initializes a new instance of the <see cref="EntityRepositoryBase{TDomainModel, TDataKey, TDataModel}" /> class.
     /// </summary>
     /// <param name="dbContext"><inheritdoc cref="DbContext" path="/summary"/></param>
     /// <param name="mapper"><inheritdoc cref="IMapper" path="/summary"/></param>
-    protected BaseRepository(DbContext dbContext, IMapper mapper)
+    protected EntityRepositoryBase(DbContext dbContext, IMapper mapper)
     {
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -47,7 +45,7 @@ public abstract class BaseRepository<TDomainModel, TDataKey, TDataModel>
     ///     A task that represents the asynchronous operation. 
     ///     The task result contains an identifier of the new element.
     /// </returns>
-    public virtual async Task<TDataKey> CreateAsync([NotNull] TDomainModel entity, CancellationToken cancellationToken)
+    public virtual async Task<TDataKey> CreateAsync(TDomainModel entity, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(entity);
 
@@ -55,18 +53,18 @@ public abstract class BaseRepository<TDomainModel, TDataKey, TDataModel>
 
         try
         {
-            if (entityDbo.Id == default && GeneratePrimaryKey(out var key))
+            if (GeneratePrimaryKey(out var key))
             {
                 entityDbo.Id = key;
             }
 
             _ = await Set.AddAsync(entityDbo, cancellationToken);
 
-            return entityDbo.Id;
+            return entityDbo.Id!;
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("is already being tracked", StringComparison.OrdinalIgnoreCase))
         {
-            throw new DuplicateFoundException(entityDbo.Id, ex);
+            throw new DuplicateFoundException(ItemSelector.From(entityDbo.Id!), ex);
         }
         //catch (DbUpdateException ex) when (ex.InnerException is SqlException sqlException && (sqlException.Number == 2627 || sqlException.Number == 2601))
         //{
@@ -100,7 +98,7 @@ public abstract class BaseRepository<TDomainModel, TDataKey, TDataModel>
     ///     The task result contains <see langword="true" /> if the table already exists, <see langword="false" /> otherwise.
     /// </returns>
     public virtual Task<bool> ExistsAsync(TDataKey id, CancellationToken cancellationToken)
-        => Set.AnyAsync(itm => itm.Id.Equals(id), cancellationToken);
+        => Set.AnyAsync(itm => itm.Id!.Equals(id), cancellationToken);
 
     /// <summary>
     ///     An asynchronously method that returns all elements.
@@ -112,8 +110,8 @@ public abstract class BaseRepository<TDomainModel, TDataKey, TDataModel>
     /// </returns>
     public virtual IAsyncEnumerable<TDomainModel> GetAllAsync(CancellationToken cancellationToken)
         => ListAsync(
-            filterBy: QueryHelper.Empty<TDataModel>(), 
-            orderBy: QueryHelper.DefaultOrder<TDataModel, TDataKey>(), 
+            filterBy: QueryHelper.Empty<TDataModel>(),
+            orderBy: QueryHelper.DefaultOrder<TDataModel, TDataKey>(),
             cancellationToken: cancellationToken);
 
     /// <summary>
@@ -190,13 +188,7 @@ public abstract class BaseRepository<TDomainModel, TDataKey, TDataModel>
     /// <returns>
     ///     The task result contains <see langword="true" /> if key is generated, <see langword="false" /> otherwise.
     /// </returns>
-    protected virtual bool GeneratePrimaryKey(out TDataKey key)
-    {
-        key = default;
-
-        // todo: implement method.
-        return true;
-    }
+    protected abstract bool GeneratePrimaryKey(out TDataKey key);
 
     /// <summary>
     ///     An asynchronously method that return sorted array of elements.
@@ -242,7 +234,7 @@ public abstract class BaseRepository<TDomainModel, TDataKey, TDataModel>
     /// <returns>
     ///     Mapped destination object <typeparamref name="TDomainModel"/>.
     /// </returns>
-    protected virtual TDomainModel Map(TDataModel entity) => _mapper.Map<TDataModel, TDomainModel>(entity);
+    protected virtual TDomainModel Map(TDataModel? entity) => _mapper.Map<TDataModel, TDomainModel>(entity);
 
     /// <summary>
     ///     A method to maps of <typeparamref name="TDomainModel" /> to <typeparamref name="TDataModel" />.
@@ -251,7 +243,7 @@ public abstract class BaseRepository<TDomainModel, TDataKey, TDataModel>
     /// <returns>
     ///     Mapped destination object <typeparamref name="TDataModel"/>.
     /// </returns>
-    protected virtual TDataModel Map(TDomainModel entity) => _mapper.Map<TDomainModel, TDataModel>(entity);
+    protected virtual TDataModel Map(TDomainModel? entity) => _mapper.Map<TDomainModel, TDataModel>(entity);
 
     /// <summary>
     ///     A method that loads related entities to the method <see cref="GetByIdAsync" />.
@@ -264,13 +256,13 @@ public abstract class BaseRepository<TDomainModel, TDataKey, TDataModel>
 
     private async Task<TDataModel> InternalGetByIdAsync(TDataKey id, CancellationToken cancellationToken)
     {
-        var entities = await IncludeForSingleQuery(Set).Where(itm => itm.Id.Equals(id)).ToListAsync(cancellationToken);
+        var entities = await IncludeForSingleQuery(Set).Where(itm => itm.Id!.Equals(id)).ToListAsync(cancellationToken);
 
         return entities switch
         {
-            { Count: 0 } => throw new ItemNotFoundException(id),
+            { Count: 0 } => throw new ItemNotFoundException(ItemSelector.From(id)),
             { Count: 1 } => entities.Single(),
-            { Count: > 1 } => throw new DuplicateFoundException(id),
+            { Count: > 1 } => throw new DuplicateFoundException(ItemSelector.From(id)),
             _ => throw new NotImplementedException()
         };
     }
